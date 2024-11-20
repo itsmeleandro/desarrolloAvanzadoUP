@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h3>Dashboard Profesional</h3>
+
+<!-- Botón para cargar turnos -->
+<div id="opciones-iniciales">
+    <button class="btn btn-primary" onclick="mostrarMisTurnos()">Ver Turnos</button>
+</div>
+
+<!-- Sección para mostrar turnos -->
+<div id="mis-turnos-container" style="display: none;">
+    <h4>Mis Turnos</h4>
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Cliente</th>
+                <th>Servicio</th>
+                <th>Fecha</th>
+                <th>Hora</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody id="mis-turnos-lista">
+            <!-- Los turnos se agregarán dinámicamente aquí -->
+        </tbody>
+    </table>
+    <p id="sin-turnos-mensaje" style="display: none;">No tienes turnos agendados.</p>
+</div>
+<!-- Campo CSRF -->
+<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+
+<script>
+    // Cargar turnos del profesional logueado
+    function mostrarMisTurnos() {
+        fetch('/turnos/mis-turnos-profesional/')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('opciones-iniciales').style.display = 'none';
+                const turnosContainer = document.getElementById('mis-turnos-container');
+                const turnosLista = document.getElementById('mis-turnos-lista');
+                const sinTurnosMensaje = document.getElementById('sin-turnos-mensaje');
+
+                turnosLista.innerHTML = ''; // Limpiar la tabla
+                turnosContainer.style.display = 'block';
+
+                if (data.turnos.length === 0) {
+                    // Si no hay turnos, mostrar mensaje
+                    sinTurnosMensaje.style.display = 'block';
+                } else {
+                    // Si hay turnos, ocultar mensaje y renderizarlos
+                    sinTurnosMensaje.style.display = 'none';
+                    data.turnos.forEach(turno => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${turno.id}</td>
+                            <td>${turno.cliente}</td>
+                            <td>${turno.servicio}</td>
+                            <td>${turno.fecha}</td>
+                            <td>${turno.hora}</td>
+                            <td>${turno.estado}</td>
+                            <td>
+                                <button class="btn btn-danger btn-sm" onclick="cancelarTurnoProfesional(${turno.id})">Cancelar</button>
+                            </td>
+                        `;
+                        turnosLista.appendChild(row);
+                    });
+                }
+            })
+            .catch(error => console.error('Error al cargar turnos:', error));
+    }
+
+    // Cancelar un turno del profesional
+function cancelarTurnoProfesional(turnoId) {
+    console.log(`Intentando cancelar turno con ID: ${turnoId}`); // Para depuración
+
+    fetch(`/turnos/cancelar-profesional/${turnoId}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+        },
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            mostrarMisTurnos(); // Recargar la lista de turnos
+        } else {
+            alert(`Error al cancelar el turno: ${data.message}`);
+        }
+    })
+    .catch(error => console.error('Error al cancelar turno:', error));
+}
+
+</script>
+{% endblock %}

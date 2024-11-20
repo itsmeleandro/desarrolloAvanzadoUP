@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h3>Dashboard Cliente</h3>
+
+<!-- Opciones de navegación -->
+<div id="opciones-iniciales">
+    <button class="btn btn-primary" onclick="mostrarMisTurnos()">Ver Mis Turnos</button>
+    <button class="btn btn-success" onclick="mostrarAgendarTurno()">Agendar Nuevo Turno</button>
+</div>
+
+<!-- Sección de agendar turno -->
+<div id="formulario-agendar-turno" style="display: none;">
+    <form method="post" id="agendarTurnoForm">
+        {% csrf_token %}
+        <div class="mb-3">
+            <label for="profesional" class="form-label">Seleccionar Profesional</label>
+            <select id="profesional" class="form-select" required>
+                <option value="" disabled selected>Selecciona un profesional</option>
+                {% for profesional in profesionales %}
+                <option value="{{ profesional.id }}">{{ profesional.usuario__first_name }} {{ profesional.usuario__last_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div id="dias-container" style="display: none;">
+            <h4>Días Disponibles</h4>
+            <div id="dias"></div>
+        </div>
+
+        <div id="horas-container" style="display: none;">
+            <h4>Horas Disponibles</h4>
+            <div id="horas"></div>
+        </div>
+
+        <div id="servicios-container" style="display: none;">
+            <h4>Seleccionar Servicio</h4>
+            <select id="servicio" class="form-select" required>
+                <option value="" disabled selected>Selecciona un servicio</option>
+            </select>
+        </div>
+
+        <div id="resumen-container" style="display: none;">
+            <h4>Resumen</h4>
+            <p id="resumen-detalle"></p>
+            <button type="button" class="btn btn-primary" id="confirmarTurnoButton">Confirmar y Agendar Turno</button>
+        </div>
+    </form>
+</div>
+
+<!-- Modal de confirmación -->
+<div class="modal fade" id="confirmacionModal" tabindex="-1" aria-labelledby="confirmacionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Turno Agendado</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>El turno ha sido agendado con éxito.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" onclick="location.reload()">Volver al Inicio</button>
+            </div>
+        </div>
+    </div>
+</div>
+<div id="mis-turnos-container" style="display: none;">
+    <h4>Mis Turnos</h4>
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Profesional</th>
+                <th>Fecha</th>
+                <th>Hora</th>
+                <th>Servicio</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody id="mis-turnos-lista">
+            <!-- Los turnos se agregarán dinámicamente aquí -->
+        </tbody>
+    </table>
+    <p id="sin-turnos-mensaje" style="display: none;">No tienes turnos agendados.</p>
+</div>
+<!-- Modal de confirmación de cancelación -->
+<div class="modal fade" id="cancelacionModal" tabindex="-1" aria-labelledby="cancelacionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Cancelar Turno</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p>¿Estás seguro de que deseas cancelar este turno?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
+                <button type="button" class="btn btn-danger" id="confirmarCancelacionButton">Sí, Cancelar</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    function mostrarMisTurnos() {
+        fetch('/turnos/mis-turnos/')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('opciones-iniciales').style.display = 'none';
+                const turnosContainer = document.getElementById('mis-turnos-container');
+                const turnosLista = document.getElementById('mis-turnos-lista');
+                const sinTurnosMensaje = document.getElementById('sin-turnos-mensaje');
+    
+                turnosLista.innerHTML = ''; // Limpiar la tabla
+                turnosContainer.style.display = 'block';
+    
+                if (data.turnos.length === 0) {
+                    // Mostrar mensaje de que no hay turnos
+                    sinTurnosMensaje.style.display = 'block';
+                } else {
+                    sinTurnosMensaje.style.display = 'none';
+                    data.turnos.forEach(turno => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${turno.profesional}</td>
+                            <td>${turno.fecha}</td>
+                            <td>${turno.hora}</td>
+                            <td>${turno.servicio}</td>
+                            <td>${turno.estado}</td>
+                            <td>
+                                <button class="btn btn-danger btn-sm" onclick="cancelarTurno(${turno.id})">Cancelar</button>
+                            </td>
+                        `;
+                        turnosLista.appendChild(row);
+                    });
+                }
+            })
+            .catch(error => console.error('Error al cargar turnos:', error));
+    }
+    
+    
+
+    function mostrarModalCancelacion(turnoId) {
+        const cancelacionModal = new bootstrap.Modal(document.getElementById('cancelacionModal'));
+        cancelacionModal.show();
+
+        document.getElementById('confirmarCancelacionButton').onclick = function () {
+            cancelarTurno(turnoId);
+            cancelacionModal.hide();
+        };
+    }
+
+    function cancelarTurno(turnoId) {
+        fetch(`/turnos/cancelar/${turnoId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            },
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Turno cancelado con éxito.');
+                    mostrarMisTurnos(); // Recargar los turnos en la tabla
+                } else {
+                    alert(`Error al cancelar el turno: ${data.message}`);
+                }
+            })
+            .catch(error => console.error('Error al cancelar turno:', error));
+    }
+    
+    function volverInicio() {
+        document.getElementById('mis-turnos-container').style.display = 'none';
+        document.getElementById('opciones-iniciales').style.display = 'block';
+    }
+    function mostrarAgendarTurno() {
+        document.getElementById('opciones-iniciales').style.display = 'none';
+        document.getElementById('formulario-agendar-turno').style.display = 'block';
+    }
+
+    document.getElementById('profesional').addEventListener('change', function () {
+        const profesionalId = this.value;
+        if (profesionalId) {
+            fetch(`/turnos/horarios-disponibles/?profesional_id=${profesionalId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const diasContainer = document.getElementById('dias-container');
+                    const diasDiv = document.getElementById('dias');
+                    diasDiv.innerHTML = '';
+                    data.dias.forEach(dia => {
+                        const button = document.createElement('button');
+                        button.textContent = dia.fecha;
+                        button.className = 'btn btn-outline-primary m-1';
+                        button.onclick = () => cargarHoras(profesionalId, dia.fecha);
+                        diasDiv.appendChild(button);
+                    });
+                    diasContainer.style.display = 'block';
+                })
+                .catch(error => console.error('Error al cargar días disponibles:', error));
+        }
+    });
+    function cargarHoras(profesionalId, fecha) {
+        fetch(`/turnos/horarios-disponibles/?profesional_id=${profesionalId}&fecha=${fecha}`)
+            .then(response => response.json())
+            .then(data => {
+                const horasContainer = document.getElementById('horas-container');
+                const horasDiv = document.getElementById('horas');
+                horasDiv.innerHTML = '';
+                if (data.horas && data.horas.length > 0) {
+                    data.horas.forEach(hora => {
+                        const button = document.createElement('button');
+                        button.textContent = hora.hora;
+                        button.className = 'btn m-1';
+                        button.classList.add(hora.disponible ? 'btn-outline-success' : 'btn-secondary');
+                        button.disabled = !hora.disponible; // Deshabilitar si no está disponible
+                        if (hora.disponible) {
+                            button.onclick = () => cargarServicios(profesionalId, fecha, hora.hora);
+                        }
+                        horasDiv.appendChild(button);
+                    });
+                    horasContainer.style.display = 'block';
+                } else {
+                    horasDiv.innerHTML = '<p>No hay horas disponibles.</p>';
+                    horasContainer.style.display = 'block';
+                }
+            })
+            .catch(error => console.error('Error al cargar horas disponibles:', error));
+    }
+
+    function cargarServicios(profesionalId, fecha, hora) {
+        fetch('/turnos/servicios-disponibles/')
+            .then(response => response.json())
+            .then(data => {
+                const servicioSelect = document.getElementById('servicio');
+                servicioSelect.innerHTML = '<option value="" disabled selected>Selecciona un servicio</option>';
+                data.servicios.forEach(servicio => {
+                    const option = document.createElement('option');
+                    option.value = servicio.id;
+                    option.textContent = `${servicio.nombre} - $${servicio.precio}`;
+                    servicioSelect.appendChild(option);
+                });
+
+                document.getElementById('servicios-container').style.display = 'block';
+
+                servicioSelect.addEventListener('change', function () {
+                    mostrarResumen(profesionalId, fecha, hora, this.value);
+                });
+            })
+            .catch(error => console.error('Error al cargar servicios:', error));
+    }
+
+    function mostrarResumen(profesionalId, fecha, hora, servicioId) {
+        const profesionalSelect = document.getElementById('profesional');
+        const profesionalNombre = profesionalSelect.options[profesionalSelect.selectedIndex].text;
+        const servicioSelect = document.getElementById('servicio');
+        const servicioNombre = servicioSelect.options[servicioSelect.selectedIndex].text;
+
+        const resumenDetalle = document.getElementById('resumen-detalle');
+        resumenDetalle.textContent = `
+            Profesional: ${profesionalNombre}, 
+            Día: ${fecha}, 
+            Hora: ${hora}, 
+            Servicio: ${servicioNombre}
+        `;
+
+        const resumenContainer = document.getElementById('resumen-container');
+        resumenContainer.style.display = 'block';
+
+        const confirmarTurnoButton = document.getElementById('confirmarTurnoButton');
+        confirmarTurnoButton.onclick = function () {
+            agendarTurno(profesionalId, fecha, hora, servicioId);
+        };
+    }
+
+    function agendarTurno(profesionalId, fecha, hora, servicioId) {
+        fetch('/turnos/agendar/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({
+                profesional_id: profesionalId,
+                fecha_hora: `${fecha}T${hora}`,
+                servicio_id: servicioId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const modal = new bootstrap.Modal(document.getElementById('confirmacionModal'));
+                modal.show();
+                cargarHoras(profesionalId, fecha); // Refresca las horas disponibles
+            } else {
+                alert(`Error al agendar el turno: ${data.message}`);
+            }
+        })
+        .catch(error => {
+            console.error('Error al agendar el turno:', error);
+            alert('Hubo un error al agendar el turno. Intenta nuevamente.');
+        });
+    }
+    
+</script>
+
+{% endblock %}
